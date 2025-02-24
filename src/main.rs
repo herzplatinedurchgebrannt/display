@@ -1,7 +1,11 @@
 #![no_std]
 #![no_main]
 
+use embedded_graphics::mono_font::iso_8859_1::FONT_10X20;
+use embedded_graphics::mono_font::iso_8859_10::FONT_9X15;
+use itoa::Buffer;
 use panic_halt as _;
+use core::char::MAX;
 use core::fmt::Write;
 use heapless::String;
 use fugit::{RateExtU32};
@@ -25,15 +29,25 @@ use ssd1306::{
 use embedded_graphics::{
     pixelcolor::BinaryColor,
     prelude::*,
-    mono_font::{MonoTextStyle, ascii::FONT_10X20},
+    mono_font::{MonoTextStyle},
     text::Text
 };
 
 // type definition
 type I2CDisplay = Ssd1306<ssd1306::prelude::I2CInterface<rp2040_hal::I2C<pac::I2C1, (rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio18, rp2040_hal::gpio::FunctionI2c, rp2040_hal::gpio::PullUp>, rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio19, rp2040_hal::gpio::FunctionI2c, rp2040_hal::gpio::PullUp>)>>, DisplaySize128x64, ssd1306::mode::BufferedGraphicsMode<DisplaySize128x64>>;
+//type Strip = Ws2812<pac::PIO0, rp2040_hal::pio::SM0, rp2040_hal::timer::CountDown<'_>, rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio16, rp2040_hal::gpio::FunctionPio0, rp2040_hal::gpio::PullDown>>;
 
 // constants
-const LED_COUNT: usize = 8;
+const TOTAL_LED_COUNT: usize = 43;
+
+const STRIP_0_OFFSET: usize = 0;
+const STRIP_0_LENGTH: usize = 8;
+const STRIP_1_OFFSET: usize = 0;
+const STRIP_1_LENGTH: usize = 13;
+const STRIP_2_OFFSET: usize = 0;
+const STRIP_2_LENGTH: usize = 8;
+const STRIP_3_OFFSET: usize = 0;
+const STRIP_3_LENGTH: usize = 13;
 
 // statics
 static RED : RGB8 = RGB8::new(30, 0, 0);
@@ -42,8 +56,15 @@ static BLUE: RGB8 = RGB8::new(0, 0, 255);
 static BLACK: RGB8 = RGB8::new(0, 0, 0);
 static WHITE: RGB8 = RGB8::new(255, 255, 255);
 
-static SCALE: u32 = 150;
-static MAX_VALUE: u32 = 1000;
+static SCALE: i32 = 150;
+static MAX_VALUE: i32 = 1000;
+
+struct Forces {
+    fx: i32,
+    fy: i32, 
+    fz: i32,
+    fr: i32
+}
 
 #[entry]
 fn main() -> ! 
@@ -111,53 +132,145 @@ fn main() -> !
     display.init().unwrap();
     display.set_brightness(Brightness::BRIGHTEST).unwrap();
 
+    is_led_config_value();
 
-    let mut value = 0;
+    let mut value: i32 = 0;
 
     loop {
 
-        ws.write(display_force(value).iter().copied()).unwrap();
+        strip_multiple_force(&mut ws, value);
 
-        frame_delay.delay_ms(1000); 
+        frame_delay.delay_ms(100); 
 
-        display_value(&mut display, value);
+        display_forces(&mut display, value, value, value, value);
 
         value += 150;
 
-        if value > MAX_VALUE {
+        if value > 1300 {
             value = 0;
         }
     }
 
-    fn display_value(display: &mut I2CDisplay, value: u32 ) {
+    fn is_led_config_value () -> bool {
 
-        let mut data: String<32> = String::<32>::new(); 
-        let _ = write!(data, "data:{value}");
+        let calculated_led_amount: usize = STRIP_0_OFFSET + STRIP_0_LENGTH + STRIP_1_OFFSET + STRIP_1_LENGTH + STRIP_2_OFFSET + STRIP_2_LENGTH + STRIP_3_OFFSET + STRIP_3_LENGTH;
+
+        if calculated_led_amount < TOTAL_LED_COUNT {
+            return true
+        }
+
+        false
+
+        // => PANIC!
+    }
+
+
+    /// display a full set of force values on the SSD1306 display
+    fn display_forces(display: &mut I2CDisplay, fx: i32, fy: i32, fz: i32, fr: i32) {
         let _ = display.clear(BinaryColor::Off);
 
-        let style = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
-        let position = Point::new(40, 60);
+        let mut data: String<32> = String::<32>::new(); 
+        let style = MonoTextStyle::new(&FONT_9X15, BinaryColor::On);
 
-        Text::new(&data, position, style).draw(display).unwrap();
+        let fx_pos = Point::new(0, 10);
+        let fy_pos = Point::new(0, 30);
+        let fz_pos = Point::new(0, 50);
+        let fr_pos = Point::new(80, 30);
+        
+        let _ = write!(data, "Fx {fx}");
+
+        Text::new(&data, fx_pos, style).draw(display).unwrap();
+
+        data.clear();
+
+        let _ = write!(data, "Fy {fy}");
+
+        Text::new(&data, fy_pos, style).draw(display).unwrap();
+
+        data.clear();
+
+        let _ = write!(data, "Fz {fz}");
+
+        Text::new(&data, fz_pos, style).draw(display).unwrap();
+
+        data.clear();
+
+        let _ = write!(data, "{fr}");
+
+        Text::new(&data, fr_pos, MonoTextStyle::new(&FONT_10X20, BinaryColor::On)).draw(display).unwrap();
 
         display.flush().unwrap();
-   }
+    }
 
+    /// visualize the resulting force via led strip
+    fn strip_single_force(fr: i32) -> [RGB8; TOTAL_LED_COUNT] {
+        let mut result: [RGB8; TOTAL_LED_COUNT] = [BLACK; TOTAL_LED_COUNT];
+        let mut x: i32 = fr / SCALE;
 
-   fn display_force(value: u32) -> [RGB8;LED_COUNT]{
-        let mut result: [RGB8; LED_COUNT] = [BLACK;LED_COUNT];
-        let x = value / SCALE;
+        let mut led_index_offset: usize = 0;
 
-        if value > MAX_VALUE{
+        // resulting force must be positive
+        if fr < 0 {
+            x = 0;
+        }
+
+        // => PANIC!
+
+        // handle too high loads, this would result in an invalid array index
+        if (x as usize) > TOTAL_LED_COUNT {
+            x = MAX_VALUE
+        }
+        
+        // => PANIC!
+
+        // check for overload
+        if fr > MAX_VALUE {
             result.fill(RED);
         }
-        else{
-            for n  in 0..(x as usize){
-                result[n] = GREEN;
+        else {
+
+            led_index_offset += STRIP_0_OFFSET;
+
+            for n  in 0..STRIP_0_LENGTH {
+                result[n + led_index_offset] = GREEN;
+                // led_index_offset += 1;
             }
+
+            led_index_offset += STRIP_0_LENGTH;
+            led_index_offset += STRIP_1_OFFSET;
+
+            for n  in 0..STRIP_1_LENGTH {
+                result[n + led_index_offset] = GREEN;
+                //led_index_offset += 1;
+            }
+
+            led_index_offset += STRIP_1_LENGTH;
+            led_index_offset += STRIP_2_OFFSET;
+
+            for n  in 0..STRIP_2_LENGTH {
+                result[n + led_index_offset] = GREEN;
+                //led_index_offset += 1;
+            }
+
+            led_index_offset += STRIP_2_LENGTH;
+            led_index_offset += STRIP_3_OFFSET;
+
+            for n  in 0..STRIP_3_LENGTH {
+                result[n + led_index_offset] = GREEN;
+                //led_index_offset += 1;
+            }
+
         }
 
         result
     }
+
+    fn strip_multiple_force(strip: &mut Ws2812<pac::PIO0, rp2040_hal::pio::SM0, rp2040_hal::timer::CountDown<'_>, rp2040_hal::gpio::Pin<rp2040_hal::gpio::bank0::Gpio16, rp2040_hal::gpio::FunctionPio0, rp2040_hal::gpio::PullDown>>, fr: i32){
+         
+        strip.write(strip_single_force(fr).iter().copied()).unwrap();
+
+
+    }
+
 
 }
