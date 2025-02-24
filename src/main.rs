@@ -49,6 +49,9 @@ const STRIP_2_LENGTH: usize = 8;
 const STRIP_3_OFFSET: usize = 0;
 const STRIP_3_LENGTH: usize = 13;
 
+const FORCE_OVERLOAD: i32 = 4500;
+const FORCE_MAX: i32 = 5000;
+
 // statics
 static RED : RGB8 = RGB8::new(30, 0, 0);
 static GREEN: RGB8 = RGB8::new(0, 30, 0);
@@ -56,8 +59,7 @@ static BLUE: RGB8 = RGB8::new(0, 0, 255);
 static BLACK: RGB8 = RGB8::new(0, 0, 0);
 static WHITE: RGB8 = RGB8::new(255, 255, 255);
 
-static SCALE: i32 = 150;
-static MAX_VALUE: i32 = 1000;
+
 
 struct Forces {
     fx: i32,
@@ -132,7 +134,7 @@ fn main() -> !
     display.init().unwrap();
     display.set_brightness(Brightness::BRIGHTEST).unwrap();
 
-    is_led_config_value();
+    is_led_config_valid();
 
     let mut value: i32 = 0;
 
@@ -146,12 +148,12 @@ fn main() -> !
 
         value += 150;
 
-        if value > 1300 {
+        if value > FORCE_MAX {
             value = 0;
         }
     }
 
-    fn is_led_config_value () -> bool {
+    fn is_led_config_valid () -> bool {
 
         let calculated_led_amount: usize = STRIP_0_OFFSET + STRIP_0_LENGTH + STRIP_1_OFFSET + STRIP_1_LENGTH + STRIP_2_OFFSET + STRIP_2_LENGTH + STRIP_3_OFFSET + STRIP_3_LENGTH;
 
@@ -202,62 +204,58 @@ fn main() -> !
         display.flush().unwrap();
     }
 
+
     /// visualize the resulting force via led strip
     fn strip_single_force(fr: i32) -> [RGB8; TOTAL_LED_COUNT] {
         let mut result: [RGB8; TOTAL_LED_COUNT] = [BLACK; TOTAL_LED_COUNT];
-        let mut x: i32 = fr / SCALE;
 
         let mut led_index_offset: usize = 0;
 
-        // resulting force must be positive
-        if fr < 0 {
-            x = 0;
-        }
 
-        // => PANIC!
-
-        // handle too high loads, this would result in an invalid array index
-        if (x as usize) > TOTAL_LED_COUNT {
-            x = MAX_VALUE
-        }
-        
-        // => PANIC!
 
         // check for overload
-        if fr > MAX_VALUE {
+        if fr > FORCE_OVERLOAD {
             result.fill(RED);
         }
         else {
 
+
+            let active_steps: usize = STRIP_0_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
+
             led_index_offset += STRIP_0_OFFSET;
 
-            for n  in 0..STRIP_0_LENGTH {
+            for n  in 0..active_steps {
                 result[n + led_index_offset] = GREEN;
-                // led_index_offset += 1;
             }
 
             led_index_offset += STRIP_0_LENGTH;
             led_index_offset += STRIP_1_OFFSET;
 
-            for n  in 0..STRIP_1_LENGTH {
+
+            let active_steps: usize = STRIP_1_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
+
+            for n  in 0..active_steps {
                 result[n + led_index_offset] = GREEN;
-                //led_index_offset += 1;
             }
 
             led_index_offset += STRIP_1_LENGTH;
             led_index_offset += STRIP_2_OFFSET;
 
-            for n  in 0..STRIP_2_LENGTH {
+
+            let active_steps: usize = STRIP_2_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
+
+            for n  in 0..active_steps {
                 result[n + led_index_offset] = GREEN;
-                //led_index_offset += 1;
             }
+
+
+            let active_steps: usize = STRIP_3_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
 
             led_index_offset += STRIP_2_LENGTH;
             led_index_offset += STRIP_3_OFFSET;
 
-            for n  in 0..STRIP_3_LENGTH {
+            for n  in 0..active_steps {
                 result[n + led_index_offset] = GREEN;
-                //led_index_offset += 1;
             }
 
         }
