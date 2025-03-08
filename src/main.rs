@@ -59,7 +59,10 @@ static BLUE: RGB8 = RGB8::new(0, 0, 255);
 static BLACK: RGB8 = RGB8::new(0, 0, 0);
 static WHITE: RGB8 = RGB8::new(255, 255, 255);
 
-
+struct StripConfig {
+    offset: usize,
+    length: usize
+}
 
 struct Forces {
     fx: i32,
@@ -138,6 +141,12 @@ fn main() -> !
 
     let mut value: i32 = 0;
 
+    let strip_config: [StripConfig;4] = [
+        StripConfig {offset: 0, length: 8},
+        StripConfig {offset: 0, length: 13},
+        StripConfig {offset: 0, length: 8},
+        StripConfig {offset: 0, length: 13}];
+
     loop {
 
         strip_multiple_force(&mut ws, value);
@@ -156,6 +165,7 @@ fn main() -> !
     fn is_led_config_valid () -> bool {
 
         let calculated_led_amount: usize = STRIP_0_OFFSET + STRIP_0_LENGTH + STRIP_1_OFFSET + STRIP_1_LENGTH + STRIP_2_OFFSET + STRIP_2_LENGTH + STRIP_3_OFFSET + STRIP_3_LENGTH;
+
 
         if calculated_led_amount < TOTAL_LED_COUNT {
             return true
@@ -178,6 +188,17 @@ fn main() -> !
         let fy_pos = Point::new(0, 30);
         let fz_pos = Point::new(0, 50);
         let fr_pos = Point::new(80, 30);
+        let ol_pos = Point::new(30, 30);
+
+        if fr > FORCE_OVERLOAD {
+            data.clear();
+
+            let _ = write!(data, "OVERLOAD!");
+    
+            Text::new(&data, ol_pos, style).draw(display).unwrap();
+            display.flush().unwrap();
+            return;
+        }
         
         let _ = write!(data, "Fx {fx}");
 
@@ -212,25 +233,25 @@ fn main() -> !
         let mut led_index_offset: usize = 0;
 
 
-
         // check for overload
         if fr > FORCE_OVERLOAD {
             result.fill(RED);
         }
         else {
 
+            led_index_offset += STRIP_0_OFFSET;
 
             let active_steps: usize = STRIP_0_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
-
-            led_index_offset += STRIP_0_OFFSET;
 
             for n  in 0..active_steps {
                 result[n + led_index_offset] = GREEN;
             }
 
             led_index_offset += STRIP_0_LENGTH;
-            led_index_offset += STRIP_1_OFFSET;
 
+
+
+            led_index_offset += STRIP_1_OFFSET;
 
             let active_steps: usize = STRIP_1_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
 
@@ -239,8 +260,10 @@ fn main() -> !
             }
 
             led_index_offset += STRIP_1_LENGTH;
-            led_index_offset += STRIP_2_OFFSET;
 
+
+
+            led_index_offset += STRIP_2_OFFSET;
 
             let active_steps: usize = STRIP_2_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
 
@@ -248,18 +271,18 @@ fn main() -> !
                 result[n + led_index_offset] = GREEN;
             }
 
+            led_index_offset += STRIP_2_LENGTH;
+
+
+
+            led_index_offset += STRIP_3_OFFSET;
 
             let active_steps: usize = STRIP_3_LENGTH * (fr as usize) / (FORCE_OVERLOAD as usize);
-
-            led_index_offset += STRIP_2_LENGTH;
-            led_index_offset += STRIP_3_OFFSET;
 
             for n  in 0..active_steps {
                 result[n + led_index_offset] = GREEN;
             }
-
         }
-
         result
     }
 

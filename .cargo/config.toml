@@ -11,3 +11,4 @@ rustflags = [
 
 #runner = "elf2uf2-rs -d"
 runner = "probe-rs run --chip RP2040"
+#DEFMT_LOG = "debug"
